@@ -10,6 +10,8 @@ const DEFAULTS = {
   openaiTranscriptionModel: 'gpt-4o-mini-transcribe'
 };
 
+const MYMEMORY_MAX_CHARS = 450;
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -123,19 +125,31 @@ async function translate(text, direction) {
 }
 
 async function translateWithMyMemory(text, direction) {
+  const chunks = splitTextIntoChunks(text, MYMEMORY_MAX_CHARS);
+  const translatedChunks = [];
+
+  for (const chunk of chunks) {
+    translatedChunks.push(await translateMyMemoryChunk(chunk, direction));
+    await wait(180);
+  }
+
+  return cleanupTranslation(translatedChunks.join('\n\n'));
+}
+
+async function translateMyMemoryChunk(text, direction) {
   const langpair = direction === 'pt-es' ? 'pt-BR|es' : 'es|pt-BR';
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor.`);
+    throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor o divide el texto.`);
   }
 
   const data = await response.json();
   const translated = data?.responseData?.translatedText;
 
   if (!translated) {
-    throw new Error('MyMemory no devolvió traducción.');
+    throw new Error('MyMemory no devolvió traducción para una parte del texto.');
   }
 
   return cleanupTranslation(translated);
@@ -213,6 +227,74 @@ function translateOfflineBasic(text, direction) {
   }
 
   return output;
+}
+
+function splitTextIntoChunks(text, maxChars) {
+  const cleanText = String(text || '').trim();
+  if (cleanText.length <= maxChars) return [cleanText];
+
+  const sentences = cleanText.match(/[^.!?。！？\n]+[.!?。！？\n]*/g) || [cleanText];
+  const chunks = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    const piece = sentence.trim();
+    if (!piece) continue;
+
+    if (piece.length > maxChars) {
+      if (current) {
+        chunks.push(current.trim());
+        current = '';
+      }
+      chunks.push(...splitLongPiece(piece, maxChars));
+      continue;
+    }
+
+    const next = current ? `${current} ${piece}` : piece;
+    if (next.length > maxChars) {
+      chunks.push(current.trim());
+      current = piece;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+function splitLongPiece(text, maxChars) {
+  const words = text.split(/\s+/);
+  const chunks = [];
+  let current = '';
+
+  for (const word of words) {
+    if (word.length > maxChars) {
+      if (current) {
+        chunks.push(current.trim());
+        current = '';
+      }
+      for (let index = 0; index < word.length; index += maxChars) {
+        chunks.push(word.slice(index, index + maxChars));
+      }
+      continue;
+    }
+
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars) {
+      chunks.push(current.trim());
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function base64ToBlob(base64, mimeType) {
