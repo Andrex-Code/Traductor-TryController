@@ -4,14 +4,16 @@ let edgeLauncher;
 let edgePanel;
 let lastSelectedText = '';
 let lastSelectionRange = null;
+let lastTextInputSelection = null;
 let toolbarTimer;
+let showCornerButton = true;
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message?.type !== 'IKONO_TRANSLATE_SELECTION') return;
   await runTranslation(message.text, message.direction, message.label);
 });
 
-initEdgeFallbackLauncher();
+initSettings();
 
 document.addEventListener('mouseup', scheduleSelectionToolbar, true);
 document.addEventListener('keyup', scheduleSelectionToolbar, true);
@@ -29,7 +31,23 @@ document.addEventListener('mousedown', (event) => {
   hideEdgePanel();
 }, true);
 
+function initSettings() {
+  chrome.storage.sync.get(['showCornerButton'], (settings) => {
+    showCornerButton = settings.showCornerButton ?? true;
+    if (showCornerButton) initEdgeFallbackLauncher();
+    else removeEdgeFallbackLauncher();
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync' || !changes.showCornerButton) return;
+    showCornerButton = changes.showCornerButton.newValue ?? true;
+    if (showCornerButton) initEdgeFallbackLauncher();
+    else removeEdgeFallbackLauncher();
+  });
+}
+
 function initEdgeFallbackLauncher() {
+  if (!showCornerButton) return;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', createEdgeFallbackLauncher, { once: true });
   } else {
@@ -38,7 +56,7 @@ function initEdgeFallbackLauncher() {
 }
 
 function createEdgeFallbackLauncher() {
-  if (edgeLauncher || !document.body) return;
+  if (!showCornerButton || edgeLauncher || !document.body) return;
 
   edgeLauncher = document.createElement('button');
   edgeLauncher.className = 'ikono-translator-launcher';
@@ -80,6 +98,13 @@ function createEdgeFallbackLauncher() {
   });
 }
 
+function removeEdgeFallbackLauncher() {
+  if (edgeLauncher) edgeLauncher.remove();
+  if (edgePanel) edgePanel.remove();
+  edgeLauncher = null;
+  edgePanel = null;
+}
+
 function scheduleSelectionToolbar() {
   clearTimeout(toolbarTimer);
   toolbarTimer = setTimeout(showSelectionToolbar, 120);
@@ -93,8 +118,7 @@ function showSelectionToolbar() {
     return;
   }
 
-  lastSelectedText = selectionData.text;
-  lastSelectionRange = selectionData.range?.cloneRange?.() || null;
+  rememberSelectionData(selectionData);
 
   if (currentToolbar) currentToolbar.remove();
 
@@ -140,11 +164,19 @@ async function runTranslation(text, direction, label) {
     return;
   }
 
-  showBubble({ title: label, original: text, translated: response.translatedText });
-
   if (direction === 'es-pt') {
-    replaceEditableSelection(response.translatedText);
+    const replaced = replaceEditableSelection(response.translatedText);
+    showBubble({
+      title: label,
+      original: text,
+      translated: replaced
+        ? `${response.translatedText}\n\nTexto reemplazado en el campo de escritura.`
+        : `${response.translatedText}\n\nNo pude reemplazar automáticamente. Usa Copiar y pégalo en el campo.`
+    });
+    return;
   }
+
+  showBubble({ title: label, original: text, translated: response.translatedText });
 }
 
 function getSelectionData() {
@@ -152,30 +184,39 @@ function getSelectionData() {
   const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
 
   if (isTextInput && typeof active.selectionStart === 'number' && active.selectionStart !== active.selectionEnd) {
-    const text = active.value.slice(active.selectionStart, active.selectionEnd).trim();
+    const start = active.selectionStart;
+    const end = active.selectionEnd;
+    const text = active.value.slice(start, end).trim();
     const rect = active.getBoundingClientRect();
-    return { text, rect, range: null };
+    return { text, rect, range: null, textInput: active, start, end };
   }
 
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-    return { text: '', rect: null, range: null };
+    return { text: '', rect: null, range: null, textInput: null };
   }
 
   const text = selection.toString().trim();
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
 
-  return { text, rect, range };
+  return { text, rect, range, textInput: null };
 }
 
 function rememberCurrentSelection() {
   const selectionData = getSelectionData();
   if (selectionData.text && selectionData.text.length >= 2) {
-    lastSelectedText = selectionData.text;
-    lastSelectionRange = selectionData.range?.cloneRange?.() || lastSelectionRange;
+    rememberSelectionData(selectionData);
   }
   return lastSelectedText;
+}
+
+function rememberSelectionData(selectionData) {
+  lastSelectedText = selectionData.text;
+  lastSelectionRange = selectionData.range?.cloneRange?.() || null;
+  lastTextInputSelection = selectionData.textInput
+    ? { element: selectionData.textInput, start: selectionData.start, end: selectionData.end }
+    : null;
 }
 
 function showBubble({ title, original, translated }) {
@@ -235,23 +276,47 @@ function placeElementNearRect(element, rect, expectedWidth) {
 }
 
 function replaceEditableSelection(text) {
-  const active = document.activeElement;
-  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+  if (lastTextInputSelection?.element?.isConnected) {
+    const { element, start, end } = lastTextInputSelection;
+    element.focus();
+    element.value = element.value.slice(0, start) + text + element.value.slice(end);
+    element.selectionStart = element.selectionEnd = start + text.length;
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
 
-  if (isTextInput && typeof active.selectionStart === 'number') {
-    const start = active.selectionStart;
-    const end = active.selectionEnd;
-    active.value = active.value.slice(0, start) + text + active.value.slice(end);
-    active.selectionStart = active.selectionEnd = start + text.length;
-    active.dispatchEvent(new Event('input', { bubbles: true }));
-    return;
+  if (lastSelectionRange) {
+    const editableRoot = findEditableRoot(lastSelectionRange.commonAncestorContainer);
+    if (editableRoot) {
+      editableRoot.focus();
+      restoreSelectionIfPossible();
+      lastSelectionRange.deleteContents();
+      lastSelectionRange.insertNode(document.createTextNode(text));
+      lastSelectionRange.collapse(false);
+      restoreSelectionIfPossible();
+      editableRoot.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      editableRoot.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
   }
 
   restoreSelectionIfPossible();
 
-  if (document.activeElement?.isContentEditable || lastSelectionRange) {
-    document.execCommand('insertText', false, text);
+  if (document.execCommand('insertText', false, text)) {
+    return true;
   }
+
+  return false;
+}
+
+function findEditableRoot(node) {
+  let element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  while (element && element !== document.body) {
+    if (element.isContentEditable) return element;
+    element = element.parentElement;
+  }
+  return null;
 }
 
 function restoreSelectionIfPossible() {
