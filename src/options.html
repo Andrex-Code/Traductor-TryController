@@ -26,6 +26,19 @@
       <span>Mostrar botón fijo PT en la esquina inferior derecha</span>
     </label>
 
+    <section class="provider-box">
+      <h2>Transcripción de audios</h2>
+      <label>
+        OpenAI API Key
+        <input id="openaiApiKey" type="password" placeholder="sk-..." autocomplete="off" />
+      </label>
+      <label>
+        Modelo de transcripción
+        <input id="openaiTranscriptionModel" type="text" placeholder="gpt-4o-mini-transcribe" />
+      </label>
+      <p class="warning">Esta clave permite transcribir audios descargados desde iKono. Para demo puede guardarse en la extensión; para producción se recomienda un backend propio para no exponer la clave.</p>
+    </section>
+
     <section class="provider-box" data-provider-box="libretranslate-local">
       <label>
         URL de LibreTranslate local
