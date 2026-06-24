@@ -1,6 +1,13 @@
 const MENU_TRANSLATE = 'ikono-translate-selection';
 const MENU_FALAR = 'ikono-falar-selection';
 
+const DEFAULTS = {
+  provider: 'mymemory-free',
+  libreTranslateUrl: 'http://localhost:5000/translate',
+  nvidiaApiKey: '',
+  nvidiaModel: 'deepseek-ai/deepseek-r1'
+};
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -16,9 +23,8 @@ chrome.runtime.onInstalled.addListener(() => {
     });
   });
 
-  chrome.storage.sync.set({
-    provider: 'offline-basic',
-    libreTranslateUrl: 'http://localhost:5000/translate'
+  chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
+    chrome.storage.sync.set({ ...DEFAULTS, ...removeEmptyDefaults(settings) });
   });
 });
 
@@ -47,18 +53,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function translate(text, direction) {
-  const settings = await chrome.storage.sync.get(['provider', 'libreTranslateUrl']);
+  const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
+  const provider = settings.provider || DEFAULTS.provider;
 
-  if (settings.provider === 'libretranslate-local') {
+  if (provider === 'mymemory-free') {
+    return translateWithMyMemory(text, direction);
+  }
+
+  if (provider === 'libretranslate-local') {
     return translateWithLibreTranslate(text, direction, settings.libreTranslateUrl);
+  }
+
+  if (provider === 'nvidia-deepseek') {
+    return translateWithNvidiaDeepSeek(text, direction, settings.nvidiaApiKey, settings.nvidiaModel);
   }
 
   return translateOfflineBasic(text, direction);
 }
 
+async function translateWithMyMemory(text, direction) {
+  const langpair = direction === 'pt-es' ? 'pt-BR|es' : 'es|pt-BR';
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor.`);
+  }
+
+  const data = await response.json();
+  const translated = data?.responseData?.translatedText;
+
+  if (!translated) {
+    throw new Error('MyMemory no devolvió traducción.');
+  }
+
+  return cleanupTranslation(translated);
+}
+
 async function translateWithLibreTranslate(text, direction, endpoint) {
   const [source, target] = direction === 'pt-es' ? ['pt', 'es'] : ['es', 'pt'];
-  const response = await fetch(endpoint || 'http://localhost:5000/translate', {
+  const response = await fetch(endpoint || DEFAULTS.libreTranslateUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ q: text, source, target, format: 'text' })
@@ -72,6 +106,47 @@ async function translateWithLibreTranslate(text, direction, endpoint) {
   return data.translatedText || data.translation || text;
 }
 
+async function translateWithNvidiaDeepSeek(text, direction, apiKey, model) {
+  if (!apiKey) {
+    throw new Error('Falta la NVIDIA API Key. Agrega la clave en Opciones.');
+  }
+
+  const targetLanguage = direction === 'pt-es' ? 'español colombiano claro y natural' : 'portugués brasileño claro y natural';
+  const sourceLanguage = direction === 'pt-es' ? 'portugués brasileño' : 'español';
+
+  const prompt = `Traduce el siguiente texto de ${sourceLanguage} a ${targetLanguage}. Devuelve únicamente la traducción, sin explicaciones, sin comillas y sin notas.\n\nTexto:\n${text}`;
+
+  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model || DEFAULTS.nvidiaModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      top_p: 0.7,
+      max_tokens: 800,
+      stream: false
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`NVIDIA respondió ${response.status}. ${errorText.slice(0, 160)}`);
+  }
+
+  const data = await response.json();
+  const translated = data?.choices?.[0]?.message?.content;
+
+  if (!translated) {
+    throw new Error('NVIDIA no devolvió traducción.');
+  }
+
+  return cleanupTranslation(translated);
+}
+
 function translateOfflineBasic(text, direction) {
   const dictionary = direction === 'pt-es' ? PT_ES : ES_PT;
   let output = text;
@@ -83,10 +158,18 @@ function translateOfflineBasic(text, direction) {
   }
 
   if (output === text) {
-    return `[Modo básico offline] ${text}\n\nActiva LibreTranslate local en Opciones para traducción completa.`;
+    return `[Modo básico offline] ${text}\n\nActiva MyMemory gratis, LibreTranslate local o NVIDIA DeepSeek en Opciones para traducción completa.`;
   }
 
   return output;
+}
+
+function cleanupTranslation(value) {
+  return String(value)
+    .replace(/^```[a-z]*\s*/i, '')
+    .replace(/```$/i, '')
+    .replace(/^['"“”]+|['"“”]+$/g, '')
+    .trim();
 }
 
 function preserveCase(replacement) {
@@ -95,6 +178,10 @@ function preserveCase(replacement) {
     if (match[0] === match[0].toUpperCase()) return replacement[0].toUpperCase() + replacement.slice(1);
     return replacement;
   };
+}
+
+function removeEmptyDefaults(settings) {
+  return Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 const PT_ES = {
