@@ -2,6 +2,8 @@ const provider = document.querySelector('#provider');
 const libreTranslateUrl = document.querySelector('#libreTranslateUrl');
 const nvidiaApiKey = document.querySelector('#nvidiaApiKey');
 const nvidiaModel = document.querySelector('#nvidiaModel');
+const openaiApiKey = document.querySelector('#openaiApiKey');
+const openaiTranscriptionModel = document.querySelector('#openaiTranscriptionModel');
 const showCornerButton = document.querySelector('#showCornerButton');
 const status = document.querySelector('#status');
 
@@ -10,6 +12,8 @@ const DEFAULTS = {
   libreTranslateUrl: 'http://localhost:5000/translate',
   nvidiaApiKey: '',
   nvidiaModel: 'deepseek-ai/deepseek-r1',
+  openaiApiKey: '',
+  openaiTranscriptionModel: 'gpt-4o-mini-transcribe',
   showCornerButton: true
 };
 
@@ -18,6 +22,8 @@ chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
   libreTranslateUrl.value = settings.libreTranslateUrl || DEFAULTS.libreTranslateUrl;
   nvidiaApiKey.value = settings.nvidiaApiKey || DEFAULTS.nvidiaApiKey;
   nvidiaModel.value = settings.nvidiaModel || DEFAULTS.nvidiaModel;
+  openaiApiKey.value = settings.openaiApiKey || DEFAULTS.openaiApiKey;
+  openaiTranscriptionModel.value = settings.openaiTranscriptionModel || DEFAULTS.openaiTranscriptionModel;
   showCornerButton.checked = settings.showCornerButton ?? DEFAULTS.showCornerButton;
   updateVisibleProviderFields();
 });
@@ -30,6 +36,8 @@ document.querySelector('#save').addEventListener('click', () => {
     libreTranslateUrl: libreTranslateUrl.value || DEFAULTS.libreTranslateUrl,
     nvidiaApiKey: nvidiaApiKey.value.trim(),
     nvidiaModel: nvidiaModel.value.trim() || DEFAULTS.nvidiaModel,
+    openaiApiKey: openaiApiKey.value.trim(),
+    openaiTranscriptionModel: openaiTranscriptionModel.value.trim() || DEFAULTS.openaiTranscriptionModel,
     showCornerButton: showCornerButton.checked
   }, () => {
     status.textContent = 'Opciones guardadas. Recarga la página de iKono para aplicar cambios visuales.';
