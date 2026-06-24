@@ -11,9 +11,11 @@ Extensión de navegador para apoyar atención en iKono Chat cuando llegan client
 - Permite copiar la traducción.
 - Intenta reemplazar el texto seleccionado cuando se usa **Falar** dentro de un campo editable.
 - Funciona como extensión local de Chrome/Edge.
-- Puede trabajar en modo gratuito con:
-  - **Modo básico offline**: diccionario de frases comunes.
-  - **LibreTranslate local**: traducción completa corriendo en la propia máquina.
+- Puede trabajar con varios motores:
+  - **MyMemory gratis sin API key** para pruebas rápidas.
+  - **Modo básico offline** con diccionario de frases comunes.
+  - **LibreTranslate local** corriendo en la propia máquina.
+  - **NVIDIA DeepSeek / NIM** con API key para demo con IA.
 
 ## Instalación en Chrome o Edge
 
@@ -21,7 +23,7 @@ Extensión de navegador para apoyar atención en iKono Chat cuando llegan client
 2. Abre `chrome://extensions` o `edge://extensions`.
 3. Activa **Modo desarrollador**.
 4. Haz clic en **Cargar descomprimida**.
-5. Selecciona la carpeta del proyecto.
+5. Selecciona la carpeta del proyecto que contiene directamente `manifest.json`.
 6. Abre iKono Chat y selecciona un texto.
 7. Clic derecho y usa la opción verde del traductor.
 
@@ -42,9 +44,15 @@ Extensión de navegador para apoyar atención en iKono Chat cuando llegan client
 4. Haz clic en **Falar Español → PT-BR**.
 5. La extensión intentará reemplazar el texto seleccionado por portugués brasileño.
 
-## Traducción gratuita completa con LibreTranslate local
+## Motores de traducción
 
-El modo offline incluido solo sirve para frases comunes. Para traducción real y gratuita, puedes correr LibreTranslate localmente.
+### MyMemory gratis sin API key
+
+Es el proveedor predeterminado desde la versión `0.2.0`. Sirve para probar traducción real rápidamente sin configurar claves.
+
+### LibreTranslate local
+
+Para traducción gratuita sin enviar datos a un tercero externo, puedes correr LibreTranslate localmente.
 
 Ejemplo con Docker:
 
@@ -61,6 +69,18 @@ Luego en la extensión:
 ```txt
 http://localhost:5000/translate
 ```
+
+### NVIDIA DeepSeek / NIM
+
+Permite probar traducción usando un modelo LLM de NVIDIA NIM. Debes pegar una NVIDIA API Key en las opciones de la extensión.
+
+Modelo por defecto:
+
+```txt
+deepseek-ai/deepseek-r1
+```
+
+Advertencia: una API key guardada en una extensión puede ser vista por usuarios con acceso al navegador. Úsala solo para demo interna. Para producción, usa un backend propio.
 
 ## Archivos principales
 
@@ -84,3 +104,4 @@ Esta extensión está pensada como prototipo gratuito para presentar al equipo. 
 - Revisar políticas internas de privacidad.
 - Validar que los textos de clientes no se envíen a servicios externos no aprobados.
 - Usar LibreTranslate local o un servidor interno si se manejan datos sensibles.
+- No exponer API keys directamente en la extensión en ambientes productivos.
