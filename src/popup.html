@@ -4,15 +4,43 @@
   <meta charset="utf-8" />
   <title>Traductor iKono</title>
   <style>
-    body { width: 280px; margin: 0; padding: 16px; font-family: system-ui, sans-serif; color: #0f172a; }
-    h1 { font-size: 16px; margin: 0 0 8px; }
+    body { width: 360px; margin: 0; padding: 16px; font-family: system-ui, sans-serif; color: #0f172a; }
+    h1 { font-size: 17px; margin: 0 0 8px; }
+    h2 { font-size: 14px; margin: 18px 0 8px; }
     p { margin: 0 0 12px; line-height: 1.4; }
     a { color: #16a34a; font-weight: 700; }
+    input[type="file"] { width: 100%; margin: 8px 0 10px; }
+    button { width: 100%; min-height: 38px; border: 0; border-radius: 10px; background: #16a34a; color: white; font-weight: 800; cursor: pointer; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .box { margin-top: 12px; padding: 12px; border: 1px solid #dbeafe; border-radius: 12px; background: #f8fafc; }
+    .result-title { display: block; margin-bottom: 6px; color: #15803d; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em; }
+    .result-text { margin: 0; white-space: pre-wrap; font-size: 13px; line-height: 1.45; }
+    .status { color: #475569; font-size: 13px; }
+    .error { color: #b91c1c; }
   </style>
 </head>
 <body>
   <h1>Traductor iKono PT-BR</h1>
-  <p>Selecciona texto en iKono Chat, clic derecho y usa “Traducir” o “Falar”.</p>
+  <p>Selecciona texto en iKono Chat o carga un audio descargado para transcribirlo.</p>
   <a href="options.html" target="_blank">Abrir opciones</a>
+
+  <h2>Transcribir audio descargado</h2>
+  <p class="status">Carga audios de iKono en formato opus/ogg/webm/mp3/m4a/wav. El resultado aparecerá abajo.</p>
+  <input id="audioFile" type="file" accept="audio/*,.opus,.ogg,.webm,.mp3,.m4a,.wav" />
+  <button id="transcribeButton" type="button">Transcribir al español</button>
+
+  <div id="status" class="status"></div>
+
+  <div id="transcriptBox" class="box" hidden>
+    <span class="result-title">Transcripción original</span>
+    <p id="transcript" class="result-text"></p>
+  </div>
+
+  <div id="spanishBox" class="box" hidden>
+    <span class="result-title">Español</span>
+    <p id="spanish" class="result-text"></p>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
