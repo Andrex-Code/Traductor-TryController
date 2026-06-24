@@ -1,31 +1,117 @@
 let currentBubble;
+let currentToolbar;
+let lastSelectedText = '';
+let lastSelectionRange = null;
+let toolbarTimer;
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message?.type !== 'IKONO_TRANSLATE_SELECTION') return;
+  await runTranslation(message.text, message.direction, message.label);
+});
 
-  showBubble({ title: message.label, original: message.text, translated: 'Traduciendo...' });
+document.addEventListener('mouseup', scheduleSelectionToolbar, true);
+document.addEventListener('keyup', scheduleSelectionToolbar, true);
+document.addEventListener('selectionchange', () => {
+  clearTimeout(toolbarTimer);
+  toolbarTimer = setTimeout(showSelectionToolbar, 180);
+});
+
+document.addEventListener('scroll', () => removeToolbar(), true);
+window.addEventListener('resize', () => removeToolbar());
+
+document.addEventListener('mousedown', (event) => {
+  if (event.target.closest?.('.ikono-translator-toolbar, .ikono-translator-bubble')) return;
+  removeToolbar();
+}, true);
+
+function scheduleSelectionToolbar() {
+  clearTimeout(toolbarTimer);
+  toolbarTimer = setTimeout(showSelectionToolbar, 120);
+}
+
+function showSelectionToolbar() {
+  const selectionData = getSelectionData();
+
+  if (!selectionData.text || selectionData.text.length < 2) {
+    removeToolbar();
+    return;
+  }
+
+  lastSelectedText = selectionData.text;
+  lastSelectionRange = selectionData.range?.cloneRange?.() || null;
+
+  if (currentToolbar) currentToolbar.remove();
+
+  currentToolbar = document.createElement('div');
+  currentToolbar.className = 'ikono-translator-toolbar';
+  currentToolbar.innerHTML = `
+    <button type="button" data-action="translate">Traducir</button>
+    <button type="button" data-action="falar">Falar</button>
+  `;
+
+  document.body.appendChild(currentToolbar);
+  placeElementNearRect(currentToolbar, selectionData.rect, 190);
+
+  currentToolbar.querySelector('[data-action="translate"]').addEventListener('mousedown', preventFocusLoss);
+  currentToolbar.querySelector('[data-action="falar"]').addEventListener('mousedown', preventFocusLoss);
+
+  currentToolbar.querySelector('[data-action="translate"]').addEventListener('click', async () => {
+    await runTranslation(lastSelectedText, 'pt-es', 'Traducción');
+  });
+
+  currentToolbar.querySelector('[data-action="falar"]').addEventListener('click', async () => {
+    await runTranslation(lastSelectedText, 'es-pt', 'Falar');
+  });
+}
+
+async function runTranslation(text, direction, label) {
+  removeToolbar();
+  restoreSelectionIfPossible();
+  showBubble({ title: label, original: text, translated: 'Traduciendo...' });
 
   const response = await chrome.runtime.sendMessage({
     type: 'IKONO_TRANSLATE',
-    text: message.text,
-    direction: message.direction
+    text,
+    direction
   });
 
   if (!response?.ok) {
     showBubble({
       title: 'Error de traducción',
-      original: message.text,
+      original: text,
       translated: response?.error || 'No se pudo traducir.'
     });
     return;
   }
 
-  showBubble({ title: message.label, original: message.text, translated: response.translatedText });
+  showBubble({ title: label, original: text, translated: response.translatedText });
 
-  if (message.direction === 'es-pt') {
+  if (direction === 'es-pt') {
     replaceEditableSelection(response.translatedText);
   }
-});
+}
+
+function getSelectionData() {
+  const active = document.activeElement;
+  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+
+  if (isTextInput && typeof active.selectionStart === 'number' && active.selectionStart !== active.selectionEnd) {
+    const text = active.value.slice(active.selectionStart, active.selectionEnd).trim();
+    const rect = active.getBoundingClientRect();
+    return { text, rect, range: null };
+  }
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return { text: '', rect: null, range: null };
+  }
+
+  const text = selection.toString().trim();
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+
+  return { text, rect, range };
+}
 
 function showBubble({ title, original, translated }) {
   if (currentBubble) currentBubble.remove();
@@ -51,7 +137,9 @@ function showBubble({ title, original, translated }) {
   `;
 
   document.body.appendChild(currentBubble);
-  placeBubbleNearSelection(currentBubble);
+
+  const selectionData = getSelectionData();
+  placeElementNearRect(currentBubble, selectionData.rect, 360);
 
   currentBubble.querySelector('[aria-label="Cerrar"]').addEventListener('click', () => currentBubble.remove());
   currentBubble.querySelector('[data-copy]').addEventListener('click', async () => {
@@ -60,11 +148,14 @@ function showBubble({ title, original, translated }) {
   });
 }
 
-function placeBubbleNearSelection(element) {
-  const selection = window.getSelection();
-  const rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
-  const top = Math.max(16, (rect?.bottom || 80) + window.scrollY + 8);
-  const left = Math.min(window.innerWidth - 360, Math.max(16, (rect?.left || 40) + window.scrollX));
+function placeElementNearRect(element, rect, expectedWidth) {
+  const fallbackTop = window.scrollY + 90;
+  const fallbackLeft = window.scrollX + 24;
+
+  const safeRect = rect && rect.width !== 0 && rect.height !== 0 ? rect : null;
+  const top = Math.max(16, (safeRect?.bottom || fallbackTop) + window.scrollY + 8);
+  const maxLeft = window.scrollX + window.innerWidth - expectedWidth - 16;
+  const left = Math.min(maxLeft, Math.max(window.scrollX + 16, (safeRect?.left || fallbackLeft) + window.scrollX));
 
   element.style.top = `${top}px`;
   element.style.left = `${left}px`;
@@ -83,9 +174,29 @@ function replaceEditableSelection(text) {
     return;
   }
 
-  if (active?.isContentEditable) {
+  restoreSelectionIfPossible();
+
+  if (document.activeElement?.isContentEditable || lastSelectionRange) {
     document.execCommand('insertText', false, text);
   }
+}
+
+function restoreSelectionIfPossible() {
+  if (!lastSelectionRange) return;
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(lastSelectionRange);
+}
+
+function removeToolbar() {
+  if (currentToolbar) {
+    currentToolbar.remove();
+    currentToolbar = null;
+  }
+}
+
+function preventFocusLoss(event) {
+  event.preventDefault();
 }
 
 function escapeHtml(value) {
