@@ -5,7 +5,9 @@ const DEFAULTS = {
   provider: 'mymemory-free',
   libreTranslateUrl: 'http://localhost:5000/translate',
   nvidiaApiKey: '',
-  nvidiaModel: 'deepseek-ai/deepseek-r1'
+  nvidiaModel: 'deepseek-ai/deepseek-r1',
+  openaiApiKey: '',
+  openaiTranscriptionModel: 'gpt-4o-mini-transcribe'
 };
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -43,14 +45,63 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== 'IKONO_TRANSLATE') return false;
+  if (message?.type === 'IKONO_TRANSLATE') {
+    translate(message.text, message.direction)
+      .then((translatedText) => sendResponse({ ok: true, translatedText }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
 
-  translate(message.text, message.direction)
-    .then((translatedText) => sendResponse({ ok: true, translatedText }))
-    .catch((error) => sendResponse({ ok: false, error: error.message }));
+  if (message?.type === 'IKONO_TRANSCRIBE_AUDIO') {
+    transcribeAudio(message.audioBase64, message.fileName, message.mimeType)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
 
-  return true;
+  return false;
 });
+
+async function transcribeAudio(audioBase64, fileName, mimeType) {
+  const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
+
+  if (!settings.openaiApiKey) {
+    throw new Error('Falta la OpenAI API Key. Agrega la clave en Opciones para transcribir audios.');
+  }
+
+  const audioBlob = base64ToBlob(audioBase64, mimeType || 'application/octet-stream');
+  const normalizedFileName = normalizeAudioFileName(fileName || 'audio.webm', mimeType);
+
+  const formData = new FormData();
+  formData.append('file', audioBlob, normalizedFileName);
+  formData.append('model', settings.openaiTranscriptionModel || DEFAULTS.openaiTranscriptionModel);
+  formData.append('language', 'pt');
+  formData.append('prompt', 'Audio de un cliente en portugués brasileño dentro de un chat de atención al cliente. Transcribe con claridad, manteniendo nombres propios cuando sea posible.');
+  formData.append('response_format', 'json');
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${settings.openaiApiKey}`
+    },
+    body: formData
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`OpenAI respondió ${response.status}. ${errorText.slice(0, 220)}`);
+  }
+
+  const data = await response.json();
+  const transcript = cleanupTranslation(data?.text || '');
+
+  if (!transcript) {
+    throw new Error('No se recibió transcripción del audio.');
+  }
+
+  const spanish = await translate(transcript, 'pt-es');
+  return { transcript, spanish };
+}
 
 async function translate(text, direction) {
   const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
@@ -162,6 +213,25 @@ function translateOfflineBasic(text, direction) {
   }
 
   return output;
+}
+
+function base64ToBlob(base64, mimeType) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+function normalizeAudioFileName(fileName, mimeType) {
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.endsWith('.opus')) return fileName.replace(/\.opus$/i, '.ogg');
+  if (lowerName.includes('.')) return fileName;
+  if (mimeType?.includes('ogg')) return `${fileName}.ogg`;
+  if (mimeType?.includes('webm')) return `${fileName}.webm`;
+  if (mimeType?.includes('mpeg')) return `${fileName}.mp3`;
+  return `${fileName}.webm`;
 }
 
 function cleanupTranslation(value) {
