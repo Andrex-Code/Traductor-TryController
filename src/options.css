@@ -32,4 +32,21 @@ button {
   font-weight: 800;
   cursor: pointer;
 }
+.provider-box {
+  margin: 12px 0 18px;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+}
+.provider-box[hidden] { display: none; }
+.warning {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.45;
+}
 #status { color: #15803d; font-weight: 700; }
