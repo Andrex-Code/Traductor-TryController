@@ -2,13 +2,15 @@ const provider = document.querySelector('#provider');
 const libreTranslateUrl = document.querySelector('#libreTranslateUrl');
 const nvidiaApiKey = document.querySelector('#nvidiaApiKey');
 const nvidiaModel = document.querySelector('#nvidiaModel');
+const showCornerButton = document.querySelector('#showCornerButton');
 const status = document.querySelector('#status');
 
 const DEFAULTS = {
   provider: 'mymemory-free',
   libreTranslateUrl: 'http://localhost:5000/translate',
   nvidiaApiKey: '',
-  nvidiaModel: 'deepseek-ai/deepseek-r1'
+  nvidiaModel: 'deepseek-ai/deepseek-r1',
+  showCornerButton: true
 };
 
 chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
@@ -16,6 +18,7 @@ chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
   libreTranslateUrl.value = settings.libreTranslateUrl || DEFAULTS.libreTranslateUrl;
   nvidiaApiKey.value = settings.nvidiaApiKey || DEFAULTS.nvidiaApiKey;
   nvidiaModel.value = settings.nvidiaModel || DEFAULTS.nvidiaModel;
+  showCornerButton.checked = settings.showCornerButton ?? DEFAULTS.showCornerButton;
   updateVisibleProviderFields();
 });
 
@@ -26,10 +29,11 @@ document.querySelector('#save').addEventListener('click', () => {
     provider: provider.value,
     libreTranslateUrl: libreTranslateUrl.value || DEFAULTS.libreTranslateUrl,
     nvidiaApiKey: nvidiaApiKey.value.trim(),
-    nvidiaModel: nvidiaModel.value.trim() || DEFAULTS.nvidiaModel
+    nvidiaModel: nvidiaModel.value.trim() || DEFAULTS.nvidiaModel,
+    showCornerButton: showCornerButton.checked
   }, () => {
-    status.textContent = 'Opciones guardadas.';
-    setTimeout(() => status.textContent = '', 1600);
+    status.textContent = 'Opciones guardadas. Recarga la página de iKono para aplicar cambios visuales.';
+    setTimeout(() => status.textContent = '', 2600);
   });
 });
 
