@@ -1,5 +1,7 @@
 let currentBubble;
 let currentToolbar;
+let edgeLauncher;
+let edgePanel;
 let lastSelectedText = '';
 let lastSelectionRange = null;
 let toolbarTimer;
@@ -8,6 +10,8 @@ chrome.runtime.onMessage.addListener(async (message) => {
   if (message?.type !== 'IKONO_TRANSLATE_SELECTION') return;
   await runTranslation(message.text, message.direction, message.label);
 });
+
+initEdgeFallbackLauncher();
 
 document.addEventListener('mouseup', scheduleSelectionToolbar, true);
 document.addEventListener('keyup', scheduleSelectionToolbar, true);
@@ -20,9 +24,61 @@ document.addEventListener('scroll', () => removeToolbar(), true);
 window.addEventListener('resize', () => removeToolbar());
 
 document.addEventListener('mousedown', (event) => {
-  if (event.target.closest?.('.ikono-translator-toolbar, .ikono-translator-bubble')) return;
+  if (event.target.closest?.('.ikono-translator-toolbar, .ikono-translator-bubble, .ikono-translator-launcher, .ikono-translator-panel')) return;
   removeToolbar();
+  hideEdgePanel();
 }, true);
+
+function initEdgeFallbackLauncher() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', createEdgeFallbackLauncher, { once: true });
+  } else {
+    createEdgeFallbackLauncher();
+  }
+}
+
+function createEdgeFallbackLauncher() {
+  if (edgeLauncher || !document.body) return;
+
+  edgeLauncher = document.createElement('button');
+  edgeLauncher.className = 'ikono-translator-launcher';
+  edgeLauncher.type = 'button';
+  edgeLauncher.title = 'Traductor iKono';
+  edgeLauncher.textContent = 'PT';
+
+  edgePanel = document.createElement('div');
+  edgePanel.className = 'ikono-translator-panel';
+  edgePanel.hidden = true;
+  edgePanel.innerHTML = `
+    <button type="button" data-action="translate">Traducir selección</button>
+    <button type="button" data-action="falar">Falar selección</button>
+  `;
+
+  document.body.appendChild(edgeLauncher);
+  document.body.appendChild(edgePanel);
+
+  edgeLauncher.addEventListener('mousedown', preventFocusLoss);
+  edgePanel.addEventListener('mousedown', preventFocusLoss);
+
+  edgeLauncher.addEventListener('click', () => {
+    rememberCurrentSelection();
+    edgePanel.hidden = !edgePanel.hidden;
+  });
+
+  edgePanel.querySelector('[data-action="translate"]').addEventListener('click', async () => {
+    const text = rememberCurrentSelection();
+    if (!text) return showNoSelectionBubble();
+    await runTranslation(text, 'pt-es', 'Traducción');
+    hideEdgePanel();
+  });
+
+  edgePanel.querySelector('[data-action="falar"]').addEventListener('click', async () => {
+    const text = rememberCurrentSelection();
+    if (!text) return showNoSelectionBubble();
+    await runTranslation(text, 'es-pt', 'Falar');
+    hideEdgePanel();
+  });
+}
 
 function scheduleSelectionToolbar() {
   clearTimeout(toolbarTimer);
@@ -113,6 +169,15 @@ function getSelectionData() {
   return { text, rect, range };
 }
 
+function rememberCurrentSelection() {
+  const selectionData = getSelectionData();
+  if (selectionData.text && selectionData.text.length >= 2) {
+    lastSelectedText = selectionData.text;
+    lastSelectionRange = selectionData.range?.cloneRange?.() || lastSelectionRange;
+  }
+  return lastSelectedText;
+}
+
 function showBubble({ title, original, translated }) {
   if (currentBubble) currentBubble.remove();
 
@@ -145,6 +210,14 @@ function showBubble({ title, original, translated }) {
   currentBubble.querySelector('[data-copy]').addEventListener('click', async () => {
     await navigator.clipboard.writeText(translated);
     currentBubble.querySelector('[data-copy]').textContent = 'Copiado';
+  });
+}
+
+function showNoSelectionBubble() {
+  showBubble({
+    title: 'Traductor iKono',
+    original: '',
+    translated: 'Selecciona un texto primero y luego vuelve a tocar el botón PT.'
   });
 }
 
@@ -193,6 +266,10 @@ function removeToolbar() {
     currentToolbar.remove();
     currentToolbar = null;
   }
+}
+
+function hideEdgePanel() {
+  if (edgePanel) edgePanel.hidden = true;
 }
 
 function preventFocusLoss(event) {
