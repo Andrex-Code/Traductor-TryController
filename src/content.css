@@ -1,3 +1,33 @@
+.ikono-translator-toolbar {
+  position: absolute;
+  z-index: 2147483647;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: #052e16;
+  border: 1px solid #22c55e;
+  border-radius: 999px;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, 0.35);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ikono-translator-toolbar button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #22c55e;
+  color: #052e16;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ikono-translator-toolbar button[data-action="falar"] {
+  background: #dcfce7;
+}
+
 .ikono-translator-bubble {
   position: absolute;
   z-index: 2147483647;
