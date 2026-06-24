@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opciones - Traductor iKono</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main>
+    <h1>Traductor iKono PT-BR</h1>
+    <p>Configura el motor de traducción. El modo básico funciona offline, pero solo traduce frases comunes. Para traducción completa gratis, usa LibreTranslate local.</p>
+
+    <label>
+      Motor de traducción
+      <select id="provider">
+        <option value="offline-basic">Básico offline incluido</option>
+        <option value="libretranslate-local">LibreTranslate local</option>
+      </select>
+    </label>
+
+    <label>
+      URL de LibreTranslate local
+      <input id="libreTranslateUrl" type="url" placeholder="http://localhost:5000/translate" />
+    </label>
+
+    <button id="save">Guardar</button>
+    <p id="status" role="status"></p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
