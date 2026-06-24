@@ -9,20 +9,38 @@
 <body>
   <main>
     <h1>Traductor iKono PT-BR</h1>
-    <p>Configura el motor de traducción. El modo básico funciona offline, pero solo traduce frases comunes. Para traducción completa gratis, usa LibreTranslate local.</p>
+    <p>Configura el motor de traducción. Para probar rápido, usa MyMemory gratis sin API key. Para demo con IA, usa NVIDIA DeepSeek con tu API key.</p>
 
     <label>
       Motor de traducción
       <select id="provider">
+        <option value="mymemory-free">MyMemory gratis sin API key</option>
         <option value="offline-basic">Básico offline incluido</option>
         <option value="libretranslate-local">LibreTranslate local</option>
+        <option value="nvidia-deepseek">NVIDIA DeepSeek / NIM</option>
       </select>
     </label>
 
-    <label>
-      URL de LibreTranslate local
-      <input id="libreTranslateUrl" type="url" placeholder="http://localhost:5000/translate" />
-    </label>
+    <section class="provider-box" data-provider-box="libretranslate-local">
+      <label>
+        URL de LibreTranslate local
+        <input id="libreTranslateUrl" type="url" placeholder="http://localhost:5000/translate" />
+      </label>
+    </section>
+
+    <section class="provider-box" data-provider-box="nvidia-deepseek">
+      <label>
+        NVIDIA API Key
+        <input id="nvidiaApiKey" type="password" placeholder="nvapi-..." autocomplete="off" />
+      </label>
+
+      <label>
+        Modelo NVIDIA
+        <input id="nvidiaModel" type="text" placeholder="deepseek-ai/deepseek-r1" />
+      </label>
+
+      <p class="warning">Advertencia: una API key guardada en una extensión puede ser vista por usuarios con acceso al navegador. Úsala solo para demo interna. Para producción, usa un backend propio.</p>
+    </section>
 
     <button id="save">Guardar</button>
     <p id="status" role="status"></p>
