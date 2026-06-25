@@ -9,34 +9,29 @@
 <body>
   <main>
     <h1>Traductor iKono PT-BR</h1>
-    <p>Configura el motor de traducción. Para probar rápido, usa MyMemory gratis sin API key. Para demo con IA, usa NVIDIA DeepSeek con tu API key.</p>
+    <p>Configura el motor de traduccion. El modo recomendado es Backend seguro, porque la clave queda guardada en Vercel y no en el navegador.</p>
 
     <label>
-      Motor de traducción
+      Motor de traduccion
       <select id="provider">
-        <option value="mymemory-free">MyMemory gratis sin API key</option>
-        <option value="offline-basic">Básico offline incluido</option>
+        <option value="backend-openai">Backend seguro</option>
+        <option value="mymemory-free">MyMemory gratis sin clave</option>
+        <option value="offline-basic">Basico offline incluido</option>
         <option value="libretranslate-local">LibreTranslate local</option>
-        <option value="nvidia-deepseek">NVIDIA DeepSeek / NIM</option>
       </select>
     </label>
 
     <label class="toggle-row">
       <input id="showCornerButton" type="checkbox" />
-      <span>Mostrar botón fijo PT en la esquina inferior derecha</span>
+      <span>Mostrar boton fijo ONOFF en la esquina inferior derecha</span>
     </label>
 
-    <section class="provider-box">
-      <h2>Transcripción de audios</h2>
+    <section class="provider-box" data-provider-box="backend-openai">
       <label>
-        OpenAI API Key
-        <input id="openaiApiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        URL del backend
+        <input id="backendUrl" type="url" placeholder="https://traductor-try-controller.vercel.app" />
       </label>
-      <label>
-        Modelo de transcripción
-        <input id="openaiTranscriptionModel" type="text" placeholder="gpt-4o-mini-transcribe" />
-      </label>
-      <p class="warning">Esta clave permite transcribir audios descargados desde iKono. Para demo puede guardarse en la extensión; para producción se recomienda un backend propio para no exponer la clave.</p>
+      <p class="warning">Esta URL apunta al servicio de Vercel. Los asesores no deben configurar ninguna clave en el navegador.</p>
     </section>
 
     <section class="provider-box" data-provider-box="libretranslate-local">
@@ -44,20 +39,6 @@
         URL de LibreTranslate local
         <input id="libreTranslateUrl" type="url" placeholder="http://localhost:5000/translate" />
       </label>
-    </section>
-
-    <section class="provider-box" data-provider-box="nvidia-deepseek">
-      <label>
-        NVIDIA API Key
-        <input id="nvidiaApiKey" type="password" placeholder="nvapi-..." autocomplete="off" />
-      </label>
-
-      <label>
-        Modelo NVIDIA
-        <input id="nvidiaModel" type="text" placeholder="deepseek-ai/deepseek-r1" />
-      </label>
-
-      <p class="warning">Advertencia: una API key guardada en una extensión puede ser vista por usuarios con acceso al navegador. Úsala solo para demo interna. Para producción, usa un backend propio.</p>
     </section>
 
     <button id="save">Guardar</button>
