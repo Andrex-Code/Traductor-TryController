@@ -5,6 +5,7 @@ const DEFAULTS = {
   provider: 'mymemory-free',
   libreTranslateUrl: 'http://localhost:5000/translate',
   nvidiaApiKey: '',
+  nvidiaEndpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
   nvidiaModel: 'deepseek-ai/deepseek-r1',
   openaiApiKey: '',
   openaiTranscriptionModel: 'gpt-4o-mini-transcribe'
@@ -14,17 +15,8 @@ const MYMEMORY_MAX_CHARS = 450;
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: MENU_TRANSLATE,
-      title: 'Traducir PT-BR → Español',
-      contexts: ['selection']
-    });
-
-    chrome.contextMenus.create({
-      id: MENU_FALAR,
-      title: 'Falar Español → PT-BR',
-      contexts: ['selection', 'editable']
-    });
+    chrome.contextMenus.create({ id: MENU_TRANSLATE, title: 'Traducir PT-BR → Español', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: MENU_FALAR, title: 'Falar Español → PT-BR', contexts: ['selection', 'editable'] });
   });
 
   chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
@@ -34,16 +26,9 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id || !info.selectionText) return;
-
   const direction = info.menuItemId === MENU_TRANSLATE ? 'pt-es' : 'es-pt';
   const label = info.menuItemId === MENU_TRANSLATE ? 'Traducción' : 'Falar';
-
-  chrome.tabs.sendMessage(tab.id, {
-    type: 'IKONO_TRANSLATE_SELECTION',
-    text: info.selectionText,
-    direction,
-    label
-  });
+  chrome.tabs.sendMessage(tab.id, { type: 'IKONO_TRANSLATE_SELECTION', text: info.selectionText, direction, label });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -66,14 +51,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function transcribeAudio(audioBase64, fileName, mimeType) {
   const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
-
-  if (!settings.openaiApiKey) {
-    throw new Error('Falta la OpenAI API Key. Agrega la clave en Opciones para transcribir audios.');
-  }
+  if (!settings.openaiApiKey) throw new Error('Falta la OpenAI API Key. Agrega la clave en Opciones para transcribir audios.');
 
   const audioBlob = base64ToBlob(audioBase64, mimeType || 'application/octet-stream');
   const normalizedFileName = normalizeAudioFileName(fileName || 'audio.webm', mimeType);
-
   const formData = new FormData();
   formData.append('file', audioBlob, normalizedFileName);
   formData.append('model', settings.openaiTranscriptionModel || DEFAULTS.openaiTranscriptionModel);
@@ -83,9 +64,7 @@ async function transcribeAudio(audioBase64, fileName, mimeType) {
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${settings.openaiApiKey}`
-    },
+    headers: { Authorization: `Bearer ${settings.openaiApiKey}` },
     body: formData
   });
 
@@ -96,11 +75,7 @@ async function transcribeAudio(audioBase64, fileName, mimeType) {
 
   const data = await response.json();
   const transcript = cleanupTranslation(data?.text || '');
-
-  if (!transcript) {
-    throw new Error('No se recibió transcripción del audio.');
-  }
-
+  if (!transcript) throw new Error('No se recibió transcripción del audio.');
   const spanish = await translate(transcript, 'pt-es');
   return { transcript, spanish };
 }
@@ -109,30 +84,19 @@ async function translate(text, direction) {
   const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
   const provider = settings.provider || DEFAULTS.provider;
 
-  if (provider === 'mymemory-free') {
-    return translateWithMyMemory(text, direction);
-  }
-
-  if (provider === 'libretranslate-local') {
-    return translateWithLibreTranslate(text, direction, settings.libreTranslateUrl);
-  }
-
-  if (provider === 'nvidia-deepseek') {
-    return translateWithNvidiaDeepSeek(text, direction, settings.nvidiaApiKey, settings.nvidiaModel);
-  }
-
+  if (provider === 'mymemory-free') return translateWithMyMemory(text, direction);
+  if (provider === 'libretranslate-local') return translateWithLibreTranslate(text, direction, settings.libreTranslateUrl);
+  if (provider === 'nvidia-deepseek') return translateWithNvidiaDeepSeek(text, direction, settings.nvidiaApiKey, settings.nvidiaModel, settings.nvidiaEndpoint);
   return translateOfflineBasic(text, direction);
 }
 
 async function translateWithMyMemory(text, direction) {
   const chunks = splitTextIntoChunks(text, MYMEMORY_MAX_CHARS);
   const translatedChunks = [];
-
   for (const chunk of chunks) {
     translatedChunks.push(await translateMyMemoryChunk(chunk, direction));
     await wait(180);
   }
-
   return cleanupTranslation(translatedChunks.join('\n\n'));
 }
 
@@ -140,18 +104,10 @@ async function translateMyMemoryChunk(text, direction) {
   const langpair = direction === 'pt-es' ? 'pt-BR|es' : 'es|pt-BR';
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
   const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor o divide el texto.`);
-  }
-
+  if (!response.ok) throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor o divide el texto.`);
   const data = await response.json();
   const translated = data?.responseData?.translatedText;
-
-  if (!translated) {
-    throw new Error('MyMemory no devolvió traducción para una parte del texto.');
-  }
-
+  if (!translated) throw new Error('MyMemory no devolvió traducción para una parte del texto.');
   return cleanupTranslation(translated);
 }
 
@@ -162,33 +118,25 @@ async function translateWithLibreTranslate(text, direction, endpoint) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ q: text, source, target, format: 'text' })
   });
-
-  if (!response.ok) {
-    throw new Error(`LibreTranslate local respondió ${response.status}. Revisa que el servidor esté encendido.`);
-  }
-
+  if (!response.ok) throw new Error(`LibreTranslate local respondió ${response.status}. Revisa que el servidor esté encendido.`);
   const data = await response.json();
   return data.translatedText || data.translation || text;
 }
 
-async function translateWithNvidiaDeepSeek(text, direction, apiKey, model) {
-  if (!apiKey) {
-    throw new Error('Falta la NVIDIA API Key. Agrega la clave en Opciones.');
-  }
+async function translateWithNvidiaDeepSeek(text, direction, apiKey, model, endpoint) {
+  if (!apiKey) throw new Error('Falta la NVIDIA API Key. Agrega la clave en Opciones.');
 
   const targetLanguage = direction === 'pt-es' ? 'español colombiano claro y natural' : 'portugués brasileño claro y natural';
   const sourceLanguage = direction === 'pt-es' ? 'portugués brasileño' : 'español';
-
   const prompt = `Traduce el siguiente texto de ${sourceLanguage} a ${targetLanguage}. Devuelve únicamente la traducción, sin explicaciones, sin comillas y sin notas.\n\nTexto:\n${text}`;
+  const nvidiaUrl = endpoint || DEFAULTS.nvidiaEndpoint;
+  const nvidiaModel = model || DEFAULTS.nvidiaModel;
 
-  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+  const response = await fetch(nvidiaUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: model || DEFAULTS.nvidiaModel,
+      model: nvidiaModel,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
       top_p: 0.7,
@@ -199,66 +147,48 @@ async function translateWithNvidiaDeepSeek(text, direction, apiKey, model) {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
-    throw new Error(`NVIDIA respondió ${response.status}. ${errorText.slice(0, 160)}`);
+    if (response.status === 404) {
+      throw new Error(`NVIDIA respondió 404. La URL o el modelo no existen para tu cuenta. Revisa en NVIDIA el botón View Code y copia exactamente el model id y el endpoint. Modelo actual: ${nvidiaModel}. Endpoint actual: ${nvidiaUrl}.`);
+    }
+    throw new Error(`NVIDIA respondió ${response.status}. ${errorText.slice(0, 180)}`);
   }
 
   const data = await response.json();
   const translated = data?.choices?.[0]?.message?.content;
-
-  if (!translated) {
-    throw new Error('NVIDIA no devolvió traducción.');
-  }
-
+  if (!translated) throw new Error('NVIDIA no devolvió traducción.');
   return cleanupTranslation(translated);
 }
 
 function translateOfflineBasic(text, direction) {
   const dictionary = direction === 'pt-es' ? PT_ES : ES_PT;
   let output = text;
-
   const entries = Object.entries(dictionary).sort((a, b) => b[0].length - a[0].length);
   for (const [from, to] of entries) {
     const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     output = output.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), preserveCase(to));
   }
-
-  if (output === text) {
-    return `[Modo básico offline] ${text}\n\nActiva MyMemory gratis, LibreTranslate local o NVIDIA DeepSeek en Opciones para traducción completa.`;
-  }
-
+  if (output === text) return `[Modo básico offline] ${text}\n\nActiva MyMemory gratis, LibreTranslate local o NVIDIA DeepSeek en Opciones para traducción completa.`;
   return output;
 }
 
 function splitTextIntoChunks(text, maxChars) {
   const cleanText = String(text || '').trim();
   if (cleanText.length <= maxChars) return [cleanText];
-
   const sentences = cleanText.match(/[^.!?。！？\n]+[.!?。！？\n]*/g) || [cleanText];
   const chunks = [];
   let current = '';
-
   for (const sentence of sentences) {
     const piece = sentence.trim();
     if (!piece) continue;
-
     if (piece.length > maxChars) {
-      if (current) {
-        chunks.push(current.trim());
-        current = '';
-      }
+      if (current) { chunks.push(current.trim()); current = ''; }
       chunks.push(...splitLongPiece(piece, maxChars));
       continue;
     }
-
     const next = current ? `${current} ${piece}` : piece;
-    if (next.length > maxChars) {
-      chunks.push(current.trim());
-      current = piece;
-    } else {
-      current = next;
-    }
+    if (next.length > maxChars) { chunks.push(current.trim()); current = piece; }
+    else current = next;
   }
-
   if (current.trim()) chunks.push(current.trim());
   return chunks;
 }
@@ -267,42 +197,26 @@ function splitLongPiece(text, maxChars) {
   const words = text.split(/\s+/);
   const chunks = [];
   let current = '';
-
   for (const word of words) {
     if (word.length > maxChars) {
-      if (current) {
-        chunks.push(current.trim());
-        current = '';
-      }
-      for (let index = 0; index < word.length; index += maxChars) {
-        chunks.push(word.slice(index, index + maxChars));
-      }
+      if (current) { chunks.push(current.trim()); current = ''; }
+      for (let index = 0; index < word.length; index += maxChars) chunks.push(word.slice(index, index + maxChars));
       continue;
     }
-
     const next = current ? `${current} ${word}` : word;
-    if (next.length > maxChars) {
-      chunks.push(current.trim());
-      current = word;
-    } else {
-      current = next;
-    }
+    if (next.length > maxChars) { chunks.push(current.trim()); current = word; }
+    else current = next;
   }
-
   if (current.trim()) chunks.push(current.trim());
   return chunks;
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 function base64ToBlob(base64, mimeType) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return new Blob([bytes], { type: mimeType });
 }
 
@@ -317,11 +231,7 @@ function normalizeAudioFileName(fileName, mimeType) {
 }
 
 function cleanupTranslation(value) {
-  return String(value)
-    .replace(/^```[a-z]*\s*/i, '')
-    .replace(/```$/i, '')
-    .replace(/^['"“”]+|['"“”]+$/g, '')
-    .trim();
+  return String(value).replace(/^```[a-z]*\s*/i, '').replace(/```$/i, '').replace(/^['"“”]+|['"“”]+$/g, '').trim();
 }
 
 function preserveCase(replacement) {
