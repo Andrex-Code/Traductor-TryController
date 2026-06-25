@@ -2,11 +2,14 @@ let currentBubble;
 let currentToolbar;
 let edgeLauncher;
 let edgePanel;
+let edgeAudioInput;
 let lastSelectedText = '';
 let lastSelectionRange = null;
 let lastTextInputSelection = null;
 let toolbarTimer;
 let showCornerButton = true;
+let launcherPosition = null;
+let launcherDragState = null;
 
 chrome.runtime.onMessage.addListener(async (message) => {
   if (message?.type !== 'IKONO_TRANSLATE_SELECTION') return;
@@ -23,7 +26,10 @@ document.addEventListener('selectionchange', () => {
 });
 
 document.addEventListener('scroll', () => removeToolbar(), true);
-window.addEventListener('resize', () => removeToolbar());
+window.addEventListener('resize', () => {
+  removeToolbar();
+  positionEdgePanelNearLauncher();
+});
 
 document.addEventListener('mousedown', (event) => {
   if (event.target.closest?.('.ikono-translator-toolbar, .ikono-translator-bubble, .ikono-translator-launcher, .ikono-translator-panel')) return;
@@ -32,17 +38,26 @@ document.addEventListener('mousedown', (event) => {
 }, true);
 
 function initSettings() {
-  chrome.storage.sync.get(['showCornerButton'], (settings) => {
+  chrome.storage.sync.get(['showCornerButton', 'launcherPosition'], (settings) => {
     showCornerButton = settings.showCornerButton ?? true;
+    launcherPosition = settings.launcherPosition || null;
     if (showCornerButton) initEdgeFallbackLauncher();
     else removeEdgeFallbackLauncher();
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'sync' || !changes.showCornerButton) return;
-    showCornerButton = changes.showCornerButton.newValue ?? true;
-    if (showCornerButton) initEdgeFallbackLauncher();
-    else removeEdgeFallbackLauncher();
+    if (areaName !== 'sync') return;
+
+    if (changes.launcherPosition) {
+      launcherPosition = changes.launcherPosition.newValue || null;
+      applyLauncherPosition();
+    }
+
+    if (changes.showCornerButton) {
+      showCornerButton = changes.showCornerButton.newValue ?? true;
+      if (showCornerButton) initEdgeFallbackLauncher();
+      else removeEdgeFallbackLauncher();
+    }
   });
 }
 
@@ -61,8 +76,8 @@ function createEdgeFallbackLauncher() {
   edgeLauncher = document.createElement('button');
   edgeLauncher.className = 'ikono-translator-launcher';
   edgeLauncher.type = 'button';
-  edgeLauncher.title = 'Traductor iKono';
-  edgeLauncher.textContent = 'PT';
+  edgeLauncher.title = 'Traductor iKono ONOFF. Clic para abrir. Mantén presionado para mover.';
+  edgeLauncher.innerHTML = `<img alt="ONOFF" src="${chrome.runtime.getURL('icons/icon48.png')}" />`;
 
   edgePanel = document.createElement('div');
   edgePanel.className = 'ikono-translator-panel';
@@ -70,18 +85,18 @@ function createEdgeFallbackLauncher() {
   edgePanel.innerHTML = `
     <button type="button" data-action="translate">Traducir selección</button>
     <button type="button" data-action="falar">Falar selección</button>
+    <button type="button" data-action="audio">Cargar audio</button>
+    <input class="ikono-translator-audio-input" type="file" accept="audio/*,.opus,.ogg,.webm,.mp3,.m4a,.wav" hidden />
   `;
 
   document.body.appendChild(edgeLauncher);
   document.body.appendChild(edgePanel);
 
-  edgeLauncher.addEventListener('mousedown', preventFocusLoss);
-  edgePanel.addEventListener('mousedown', preventFocusLoss);
+  edgeAudioInput = edgePanel.querySelector('.ikono-translator-audio-input');
 
-  edgeLauncher.addEventListener('click', () => {
-    rememberCurrentSelection();
-    edgePanel.hidden = !edgePanel.hidden;
-  });
+  applyLauncherPosition();
+  edgePanel.addEventListener('mousedown', preventFocusLoss);
+  edgeLauncher.addEventListener('pointerdown', startLauncherPointerInteraction);
 
   edgePanel.querySelector('[data-action="translate"]').addEventListener('click', async () => {
     const text = rememberCurrentSelection();
@@ -96,6 +111,120 @@ function createEdgeFallbackLauncher() {
     await runTranslation(text, 'es-pt', 'Falar');
     hideEdgePanel();
   });
+
+  edgePanel.querySelector('[data-action="audio"]').addEventListener('click', () => {
+    edgeAudioInput.value = '';
+    edgeAudioInput.click();
+  });
+
+  edgeAudioInput.addEventListener('change', async () => {
+    const file = edgeAudioInput.files?.[0];
+    if (!file) return;
+    await transcribeUploadedAudio(file);
+    hideEdgePanel();
+  });
+}
+
+function startLauncherPointerInteraction(event) {
+  event.preventDefault();
+  rememberCurrentSelection();
+
+  const rect = edgeLauncher.getBoundingClientRect();
+  launcherDragState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    left: rect.left,
+    top: rect.top,
+    dragging: false,
+    holdTimer: window.setTimeout(() => {
+      if (!launcherDragState) return;
+      launcherDragState.dragging = true;
+      edgeLauncher.classList.add('is-dragging');
+      edgeLauncher.setPointerCapture?.(event.pointerId);
+      hideEdgePanel();
+    }, 260)
+  };
+
+  window.addEventListener('pointermove', moveLauncherPointerInteraction, true);
+  window.addEventListener('pointerup', endLauncherPointerInteraction, true);
+  window.addEventListener('pointercancel', endLauncherPointerInteraction, true);
+}
+
+function moveLauncherPointerInteraction(event) {
+  if (!launcherDragState) return;
+
+  if (!launcherDragState.dragging) return;
+
+  const nextLeft = clamp(launcherDragState.left + event.clientX - launcherDragState.startX, 8, window.innerWidth - edgeLauncher.offsetWidth - 8);
+  const nextTop = clamp(launcherDragState.top + event.clientY - launcherDragState.startY, 8, window.innerHeight - edgeLauncher.offsetHeight - 8);
+
+  launcherPosition = { left: Math.round(nextLeft), top: Math.round(nextTop) };
+  applyLauncherPosition();
+}
+
+function endLauncherPointerInteraction(event) {
+  if (!launcherDragState) return;
+
+  window.clearTimeout(launcherDragState.holdTimer);
+  window.removeEventListener('pointermove', moveLauncherPointerInteraction, true);
+  window.removeEventListener('pointerup', endLauncherPointerInteraction, true);
+  window.removeEventListener('pointercancel', endLauncherPointerInteraction, true);
+
+  const wasDragging = launcherDragState.dragging;
+  launcherDragState = null;
+  edgeLauncher.classList.remove('is-dragging');
+  edgeLauncher.releasePointerCapture?.(event.pointerId);
+
+  if (wasDragging) {
+    chrome.storage.sync.set({ launcherPosition });
+    return;
+  }
+
+  toggleEdgePanel();
+}
+
+function applyLauncherPosition() {
+  if (!edgeLauncher) return;
+
+  if (!launcherPosition) {
+    edgeLauncher.style.left = '';
+    edgeLauncher.style.top = '';
+    edgeLauncher.style.right = '18px';
+    edgeLauncher.style.bottom = '86px';
+    positionEdgePanelNearLauncher();
+    return;
+  }
+
+  const left = clamp(launcherPosition.left, 8, window.innerWidth - edgeLauncher.offsetWidth - 8);
+  const top = clamp(launcherPosition.top, 8, window.innerHeight - edgeLauncher.offsetHeight - 8);
+  edgeLauncher.style.left = `${left}px`;
+  edgeLauncher.style.top = `${top}px`;
+  edgeLauncher.style.right = 'auto';
+  edgeLauncher.style.bottom = 'auto';
+  positionEdgePanelNearLauncher();
+}
+
+function toggleEdgePanel() {
+  if (!edgePanel) return;
+  rememberCurrentSelection();
+  edgePanel.hidden = !edgePanel.hidden;
+  positionEdgePanelNearLauncher();
+}
+
+function positionEdgePanelNearLauncher() {
+  if (!edgePanel || edgePanel.hidden || !edgeLauncher) return;
+
+  const rect = edgeLauncher.getBoundingClientRect();
+  const panelWidth = edgePanel.offsetWidth || 190;
+  const panelHeight = edgePanel.offsetHeight || 150;
+  const left = clamp(rect.right - panelWidth, 8, window.innerWidth - panelWidth - 8);
+  const top = rect.top > panelHeight + 16 ? rect.top - panelHeight - 8 : rect.bottom + 8;
+
+  edgePanel.style.left = `${left}px`;
+  edgePanel.style.top = `${clamp(top, 8, window.innerHeight - panelHeight - 8)}px`;
+  edgePanel.style.right = 'auto';
+  edgePanel.style.bottom = 'auto';
 }
 
 function removeEdgeFallbackLauncher() {
@@ -103,6 +232,7 @@ function removeEdgeFallbackLauncher() {
   if (edgePanel) edgePanel.remove();
   edgeLauncher = null;
   edgePanel = null;
+  edgeAudioInput = null;
 }
 
 function scheduleSelectionToolbar() {
@@ -177,6 +307,45 @@ async function runTranslation(text, direction, label) {
   }
 
   showBubble({ title: label, original: text, translated: response.translatedText });
+}
+
+async function transcribeUploadedAudio(file) {
+  if (file.size > 25 * 1024 * 1024) {
+    showBubble({
+      title: 'Audio demasiado grande',
+      original: file.name,
+      translated: 'El archivo supera 25 MB. Usa un audio más corto o conviértelo/comprímelo.'
+    });
+    return;
+  }
+
+  showBubble({ title: 'Transcripción de audio', original: file.name, translated: 'Procesando audio...' });
+
+  try {
+    const audioBase64 = await fileToBase64(file);
+    const response = await chrome.runtime.sendMessage({
+      type: 'IKONO_TRANSCRIBE_AUDIO',
+      audioBase64,
+      fileName: file.name,
+      mimeType: file.type
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || 'No se pudo transcribir el audio.');
+    }
+
+    showBubble({
+      title: 'Audio traducido',
+      original: response.transcript || file.name,
+      translated: response.spanish || 'No se recibió traducción.'
+    });
+  } catch (error) {
+    showBubble({
+      title: 'Error de audio',
+      original: file.name,
+      translated: error.message
+    });
+  }
 }
 
 function getSelectionData() {
@@ -258,7 +427,7 @@ function showNoSelectionBubble() {
   showBubble({
     title: 'Traductor iKono',
     original: '',
-    translated: 'Selecciona un texto primero y luego vuelve a tocar el botón PT.'
+    translated: 'Selecciona un texto primero y luego vuelve a tocar el botón ONOFF.'
   });
 }
 
@@ -339,6 +508,22 @@ function hideEdgePanel() {
 
 function preventFocusLoss(event) {
   event.preventDefault();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function escapeHtml(value) {
