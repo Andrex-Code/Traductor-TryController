@@ -8,6 +8,7 @@ let lastSelectionRange = null;
 let lastTextInputSelection = null;
 let toolbarTimer;
 let showCornerButton = true;
+let showSelectionButtons = true;
 let launcherPosition = null;
 let launcherDragState = null;
 let bubblePosition = null;
@@ -41,8 +42,9 @@ document.addEventListener('mousedown', (event) => {
 }, true);
 
 function initSettings() {
-  chrome.storage.sync.get(['showCornerButton', 'launcherPosition'], (settings) => {
+  chrome.storage.sync.get(['showCornerButton', 'showSelectionButtons', 'launcherPosition'], (settings) => {
     showCornerButton = settings.showCornerButton ?? true;
+    showSelectionButtons = settings.showSelectionButtons ?? true;
     launcherPosition = settings.launcherPosition || null;
     if (showCornerButton) initEdgeFallbackLauncher();
     else removeEdgeFallbackLauncher();
@@ -53,6 +55,11 @@ function initSettings() {
     if (changes.launcherPosition) {
       launcherPosition = changes.launcherPosition.newValue || null;
       applyLauncherPosition();
+    }
+    if (changes.showSelectionButtons) {
+      showSelectionButtons = changes.showSelectionButtons.newValue ?? true;
+      syncSelectionButtonsCheckboxes();
+      if (!showSelectionButtons) removeToolbar();
     }
     if (changes.showCornerButton) {
       showCornerButton = changes.showCornerButton.newValue ?? true;
@@ -81,6 +88,10 @@ function createEdgeFallbackLauncher() {
   edgePanel.className = 'ikono-translator-panel';
   edgePanel.hidden = true;
   edgePanel.innerHTML = `
+    <label class="ikono-translator-panel-check">
+      <input type="checkbox" data-action="toggle-selection-buttons" />
+      <span>Botones flotantes</span>
+    </label>
     <button type="button" data-action="translate">Traducir selección</button>
     <button type="button" data-action="falar">Falar selección</button>
     <button type="button" data-action="audio">Cargar audio</button>
@@ -92,8 +103,13 @@ function createEdgeFallbackLauncher() {
   edgeAudioInput = edgePanel.querySelector('.ikono-translator-audio-input');
 
   applyLauncherPosition();
+  syncSelectionButtonsCheckboxes();
   edgePanel.addEventListener('mousedown', preventFocusLoss);
   edgeLauncher.addEventListener('pointerdown', startLauncherPointerInteraction);
+
+  edgePanel.querySelector('[data-action="toggle-selection-buttons"]').addEventListener('change', (event) => {
+    setSelectionButtonsEnabled(event.target.checked);
+  });
 
   edgePanel.querySelector('[data-action="translate"]').addEventListener('click', async () => {
     const text = rememberCurrentSelection();
@@ -119,6 +135,19 @@ function createEdgeFallbackLauncher() {
     if (!file) return;
     await transcribeUploadedAudio(file);
     hideEdgePanel();
+  });
+}
+
+function setSelectionButtonsEnabled(enabled) {
+  showSelectionButtons = Boolean(enabled);
+  chrome.storage.sync.set({ showSelectionButtons });
+  syncSelectionButtonsCheckboxes();
+  if (!showSelectionButtons) removeToolbar();
+}
+
+function syncSelectionButtonsCheckboxes() {
+  document.querySelectorAll('[data-action="toggle-selection-buttons"]').forEach((checkbox) => {
+    checkbox.checked = showSelectionButtons;
   });
 }
 
@@ -198,14 +227,15 @@ function toggleEdgePanel() {
   if (!edgePanel) return;
   rememberCurrentSelection();
   edgePanel.hidden = !edgePanel.hidden;
+  syncSelectionButtonsCheckboxes();
   positionEdgePanelNearLauncher();
 }
 
 function positionEdgePanelNearLauncher() {
   if (!edgePanel || edgePanel.hidden || !edgeLauncher) return;
   const rect = edgeLauncher.getBoundingClientRect();
-  const panelWidth = edgePanel.offsetWidth || 190;
-  const panelHeight = edgePanel.offsetHeight || 150;
+  const panelWidth = edgePanel.offsetWidth || 210;
+  const panelHeight = edgePanel.offsetHeight || 190;
   const left = clamp(rect.right - panelWidth, 8, window.innerWidth - panelWidth - 8);
   const top = rect.top > panelHeight + 16 ? rect.top - panelHeight - 8 : rect.bottom + 8;
   edgePanel.style.left = `${left}px`;
@@ -228,6 +258,11 @@ function scheduleSelectionToolbar() {
 }
 
 function showSelectionToolbar() {
+  if (!showSelectionButtons) {
+    removeToolbar();
+    return;
+  }
+
   const selectionData = getSelectionData();
   if (!selectionData.text || selectionData.text.length < 2) {
     removeToolbar();
@@ -408,13 +443,7 @@ function startBubbleDrag(event) {
   if (event.target.closest('button')) return;
   event.preventDefault();
   const rect = currentBubble.getBoundingClientRect();
-  bubbleDragState = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    left: rect.left,
-    top: rect.top
-  };
+  bubbleDragState = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
   currentBubble.classList.add('is-dragging');
   currentBubble.setPointerCapture?.(event.pointerId);
   window.addEventListener('pointermove', moveBubbleDrag, true);
@@ -462,14 +491,25 @@ function showNoSelectionBubble() {
 }
 
 function placeElementNearRect(element, rect, expectedWidth) {
-  const fallbackTop = 90;
-  const fallbackLeft = 24;
+  const margin = 8;
   const safeRect = rect && rect.width !== 0 && rect.height !== 0 ? rect : null;
-  const top = Math.max(16, (safeRect?.bottom || fallbackTop) + 8);
-  const maxLeft = window.innerWidth - expectedWidth - 16;
-  const left = Math.min(maxLeft, Math.max(16, (safeRect?.left || fallbackLeft)));
-  element.style.top = `${top + window.scrollY}px`;
-  element.style.left = `${left + window.scrollX}px`;
+  const width = Math.max(expectedWidth || 190, element.offsetWidth || 190);
+  const height = element.offsetHeight || 46;
+  let left = safeRect ? safeRect.left : 24;
+  let top;
+
+  if (safeRect) {
+    const below = safeRect.bottom + margin;
+    const above = safeRect.top - height - margin;
+    top = below + height <= window.innerHeight - margin ? below : above;
+  } else {
+    top = 90;
+  }
+
+  left = clamp(left, margin, window.innerWidth - width - margin);
+  top = clamp(top, margin, window.innerHeight - height - margin);
+  element.style.top = `${Math.round(top)}px`;
+  element.style.left = `${Math.round(left)}px`;
 }
 
 function replaceEditableSelection(text) {
