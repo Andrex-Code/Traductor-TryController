@@ -17,8 +17,9 @@ module.exports = async function handler(req, res) {
       return res.status(413).json({ ok: false, error: 'El audio supera 24 MB. Usa un audio mas corto.' });
     }
 
-    const normalizedName = normalizeAudioFileName(fileName || 'audio.webm', mimeType || 'application/octet-stream');
-    const audioBlob = new Blob([audioBuffer], { type: mimeType || 'application/octet-stream' });
+    const cleanMimeType = normalizeMimeType(mimeType || 'application/octet-stream');
+    const normalizedName = normalizeAudioFileName(fileName || 'audio.webm', cleanMimeType);
+    const audioBlob = new Blob([audioBuffer], { type: cleanMimeType });
     const formData = new FormData();
     formData.append('file', audioBlob, normalizedName);
     formData.append('model', process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe');
@@ -58,13 +59,35 @@ module.exports = async function handler(req, res) {
 };
 
 function normalizeAudioFileName(fileName, mimeType) {
-  const lowerName = String(fileName).toLowerCase();
-  if (lowerName.endsWith('.opus')) return fileName.replace(/\.opus$/i, '.ogg');
-  if (lowerName.includes('.')) return fileName;
-  if (mimeType?.includes('ogg')) return `${fileName}.ogg`;
-  if (mimeType?.includes('webm')) return `${fileName}.webm`;
-  if (mimeType?.includes('mpeg')) return `${fileName}.mp3`;
-  return `${fileName}.webm`;
+  const cleanName = String(fileName || 'audio.webm')
+    .split(';')[0]
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-');
+
+  const lowerName = cleanName.toLowerCase();
+  if (lowerName.endsWith('.opus')) return cleanName.replace(/\.opus$/i, '.ogg');
+  if (lowerName.endsWith('.ogg')) return cleanName;
+  if (lowerName.endsWith('.webm')) return cleanName;
+  if (lowerName.endsWith('.mp3')) return cleanName;
+  if (lowerName.endsWith('.m4a')) return cleanName;
+  if (lowerName.endsWith('.wav')) return cleanName;
+  if (mimeType.includes('ogg')) return `${cleanName.replace(/\.[^.]+$/, '')}.ogg`;
+  if (mimeType.includes('webm')) return `${cleanName.replace(/\.[^.]+$/, '')}.webm`;
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return `${cleanName.replace(/\.[^.]+$/, '')}.mp3`;
+  if (mimeType.includes('wav')) return `${cleanName.replace(/\.[^.]+$/, '')}.wav`;
+  return `${cleanName.replace(/\.[^.]+$/, '')}.webm`;
+}
+
+function normalizeMimeType(mimeType) {
+  const cleanMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  if (cleanMime === 'audio/ogg' || cleanMime === 'application/ogg') return 'audio/ogg';
+  if (cleanMime === 'audio/opus') return 'audio/ogg';
+  if (cleanMime === 'audio/webm' || cleanMime === 'video/webm') return 'audio/webm';
+  if (cleanMime === 'audio/mpeg' || cleanMime === 'audio/mp3') return 'audio/mpeg';
+  if (cleanMime === 'audio/mp4' || cleanMime === 'audio/m4a') return 'audio/mp4';
+  if (cleanMime === 'audio/wav' || cleanMime === 'audio/x-wav') return 'audio/wav';
+  return cleanMime || 'application/octet-stream';
 }
 
 function clean(value) {
