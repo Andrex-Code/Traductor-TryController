@@ -64,6 +64,26 @@
 
 .ikono-translator-panel[hidden] { display: none; }
 
+.ikono-translator-panel-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ikono-translator-panel-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #22c55e;
+}
+
 .ikono-translator-panel button {
   border: 0;
   border-radius: 999px;
@@ -81,7 +101,7 @@
 .ikono-translator-panel button[data-action="audio"] { background: #ffffff; }
 
 .ikono-translator-toolbar {
-  position: absolute;
+  position: fixed;
   z-index: 2147483647;
   display: flex;
   gap: 6px;
