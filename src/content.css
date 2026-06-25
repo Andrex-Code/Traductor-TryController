@@ -77,13 +77,8 @@
   white-space: nowrap;
 }
 
-.ikono-translator-panel button[data-action="falar"] {
-  background: #dcfce7;
-}
-
-.ikono-translator-panel button[data-action="audio"] {
-  background: #ffffff;
-}
+.ikono-translator-panel button[data-action="falar"] { background: #dcfce7; }
+.ikono-translator-panel button[data-action="audio"] { background: #ffffff; }
 
 .ikono-translator-toolbar {
   position: absolute;
@@ -111,14 +106,15 @@
   font-weight: 800;
 }
 
-.ikono-translator-toolbar button[data-action="falar"] {
-  background: #dcfce7;
-}
+.ikono-translator-toolbar button[data-action="falar"] { background: #dcfce7; }
 
 .ikono-translator-bubble {
-  position: absolute;
+  position: fixed;
   z-index: 2147483647;
-  width: min(340px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
   background: #0f172a;
   color: #f8fafc;
   border: 1px solid #22c55e;
@@ -129,13 +125,37 @@
   overflow: hidden;
 }
 
+.ikono-translator-bubble.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.48);
+}
+
 .ikono-translator-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   padding: 10px 12px;
   background: #16a34a;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  flex: 0 0 auto;
+}
+
+.ikono-translator-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ikono-translator-drag-hint {
+  margin-left: auto;
+  color: #dcfce7;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.9;
 }
 
 .ikono-translator-header button,
@@ -151,6 +171,12 @@
   height: 24px;
   color: #0f172a;
   background: #dcfce7;
+  flex: 0 0 auto;
+}
+
+.ikono-translator-body {
+  overflow: auto;
+  min-height: 0;
 }
 
 .ikono-translator-section {
@@ -173,14 +199,13 @@
   white-space: pre-wrap;
 }
 
-.ikono-translator-result p {
-  font-size: 14px;
-}
+.ikono-translator-result p { font-size: 14px; }
 
 .ikono-translator-actions {
   display: flex;
   justify-content: flex-end;
   padding: 10px 12px 12px;
+  flex: 0 0 auto;
 }
 
 .ikono-translator-actions button {
