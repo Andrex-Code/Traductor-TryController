@@ -12,6 +12,8 @@
     input[type="file"] { width: 100%; margin: 8px 0 10px; }
     button { width: 100%; min-height: 38px; border: 0; border-radius: 10px; background: #16a34a; color: white; font-weight: 800; cursor: pointer; }
     button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .toggle-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 10px; border: 1px solid #dbeafe; border-radius: 12px; background: #f8fafc; font-size: 13px; font-weight: 700; }
+    .toggle-row input { width: 16px; height: 16px; accent-color: #16a34a; }
     .box { margin-top: 12px; padding: 12px; border: 1px solid #dbeafe; border-radius: 12px; background: #f8fafc; }
     .result-title { display: block; margin-bottom: 6px; color: #15803d; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em; }
     .result-text { margin: 0; white-space: pre-wrap; font-size: 13px; line-height: 1.45; }
@@ -23,6 +25,11 @@
   <h1>Traductor iKono PT-BR</h1>
   <p>Selecciona texto en iKono Chat o carga un audio descargado para transcribirlo.</p>
   <a href="options.html" target="_blank">Abrir opciones</a>
+
+  <label class="toggle-row">
+    <input id="showSelectionButtons" type="checkbox" />
+    <span>Mostrar botones flotantes Traducir / Falar</span>
+  </label>
 
   <h2>Transcribir audio descargado</h2>
   <p class="status">Carga audios de iKono en formato opus/ogg/webm/mp3/m4a/wav. El resultado aparecerá abajo.</p>
