@@ -1,10 +1,19 @@
 const audioFile = document.querySelector('#audioFile');
 const transcribeButton = document.querySelector('#transcribeButton');
+const showSelectionButtons = document.querySelector('#showSelectionButtons');
 const statusEl = document.querySelector('#status');
 const transcriptBox = document.querySelector('#transcriptBox');
 const spanishBox = document.querySelector('#spanishBox');
 const transcriptEl = document.querySelector('#transcript');
 const spanishEl = document.querySelector('#spanish');
+
+chrome.storage.sync.get(['showSelectionButtons'], (settings) => {
+  showSelectionButtons.checked = settings.showSelectionButtons ?? true;
+});
+
+showSelectionButtons.addEventListener('change', () => {
+  chrome.storage.sync.set({ showSelectionButtons: showSelectionButtons.checked });
+});
 
 transcribeButton.addEventListener('click', async () => {
   const file = audioFile.files?.[0];
