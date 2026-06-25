@@ -2,13 +2,15 @@ const provider = document.querySelector('#provider');
 const backendUrl = document.querySelector('#backendUrl');
 const libreTranslateUrl = document.querySelector('#libreTranslateUrl');
 const showCornerButton = document.querySelector('#showCornerButton');
+const showSelectionButtons = document.querySelector('#showSelectionButtons');
 const status = document.querySelector('#status');
 
 const DEFAULTS = {
   provider: 'backend-openai',
   backendUrl: 'https://traductor-try-controller.vercel.app',
   libreTranslateUrl: 'http://localhost:5000/translate',
-  showCornerButton: true
+  showCornerButton: true,
+  showSelectionButtons: true
 };
 
 chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
@@ -16,6 +18,7 @@ chrome.storage.sync.get(Object.keys(DEFAULTS), (settings) => {
   backendUrl.value = settings.backendUrl || DEFAULTS.backendUrl;
   libreTranslateUrl.value = settings.libreTranslateUrl || DEFAULTS.libreTranslateUrl;
   showCornerButton.checked = settings.showCornerButton ?? DEFAULTS.showCornerButton;
+  showSelectionButtons.checked = settings.showSelectionButtons ?? DEFAULTS.showSelectionButtons;
   updateVisibleProviderFields();
 });
 
@@ -26,7 +29,8 @@ document.querySelector('#save').addEventListener('click', () => {
     provider: provider.value,
     backendUrl: normalizeUrl(backendUrl.value || DEFAULTS.backendUrl),
     libreTranslateUrl: libreTranslateUrl.value || DEFAULTS.libreTranslateUrl,
-    showCornerButton: showCornerButton.checked
+    showCornerButton: showCornerButton.checked,
+    showSelectionButtons: showSelectionButtons.checked
   }, () => {
     status.textContent = 'Opciones guardadas. Recarga la pagina de iKono para aplicar cambios visuales.';
     setTimeout(() => status.textContent = '', 2600);
