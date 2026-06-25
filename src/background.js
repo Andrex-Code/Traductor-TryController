@@ -2,13 +2,9 @@ const MENU_TRANSLATE = 'ikono-translate-selection';
 const MENU_FALAR = 'ikono-falar-selection';
 
 const DEFAULTS = {
-  provider: 'mymemory-free',
-  libreTranslateUrl: 'http://localhost:5000/translate',
-  nvidiaApiKey: '',
-  nvidiaEndpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
-  nvidiaModel: 'deepseek-ai/deepseek-r1',
-  openaiApiKey: '',
-  openaiTranscriptionModel: 'gpt-4o-mini-transcribe'
+  provider: 'backend-openai',
+  backendUrl: 'https://traductor-try-controller.vercel.app',
+  libreTranslateUrl: 'http://localhost:5000/translate'
 };
 
 const MYMEMORY_MAX_CHARS = 450;
@@ -49,45 +45,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-async function transcribeAudio(audioBase64, fileName, mimeType) {
-  const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
-  if (!settings.openaiApiKey) throw new Error('Falta la OpenAI API Key. Agrega la clave en Opciones para transcribir audios.');
-
-  const audioBlob = base64ToBlob(audioBase64, mimeType || 'application/octet-stream');
-  const normalizedFileName = normalizeAudioFileName(fileName || 'audio.webm', mimeType);
-  const formData = new FormData();
-  formData.append('file', audioBlob, normalizedFileName);
-  formData.append('model', settings.openaiTranscriptionModel || DEFAULTS.openaiTranscriptionModel);
-  formData.append('language', 'pt');
-  formData.append('prompt', 'Audio de un cliente en portugués brasileño dentro de un chat de atención al cliente. Transcribe con claridad, manteniendo nombres propios cuando sea posible.');
-  formData.append('response_format', 'json');
-
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${settings.openaiApiKey}` },
-    body: formData
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`OpenAI respondió ${response.status}. ${errorText.slice(0, 220)}`);
-  }
-
-  const data = await response.json();
-  const transcript = cleanupTranslation(data?.text || '');
-  if (!transcript) throw new Error('No se recibió transcripción del audio.');
-  const spanish = await translate(transcript, 'pt-es');
-  return { transcript, spanish };
-}
-
 async function translate(text, direction) {
   const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
   const provider = settings.provider || DEFAULTS.provider;
 
+  if (provider === 'backend-openai') return translateWithBackend(text, direction, settings.backendUrl);
   if (provider === 'mymemory-free') return translateWithMyMemory(text, direction);
   if (provider === 'libretranslate-local') return translateWithLibreTranslate(text, direction, settings.libreTranslateUrl);
-  if (provider === 'nvidia-deepseek') return translateWithNvidiaDeepSeek(text, direction, settings.nvidiaApiKey, settings.nvidiaModel, settings.nvidiaEndpoint);
   return translateOfflineBasic(text, direction);
+}
+
+async function transcribeAudio(audioBase64, fileName, mimeType) {
+  const settings = await chrome.storage.sync.get(Object.keys(DEFAULTS));
+  const backendUrl = normalizeBackendUrl(settings.backendUrl);
+  if (!backendUrl) throw new Error('Falta configurar la URL del backend en Opciones.');
+
+  const response = await fetch(`${backendUrl}/api/transcribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audioBase64, fileName, mimeType })
+  });
+
+  const data = await safeJson(response);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Backend respondió ${response.status}.`);
+  return { transcript: data.transcript, spanish: data.spanish };
+}
+
+async function translateWithBackend(text, direction, backendUrlValue) {
+  const backendUrl = normalizeBackendUrl(backendUrlValue);
+  if (!backendUrl) throw new Error('Falta configurar la URL del backend en Opciones.');
+
+  const response = await fetch(`${backendUrl}/api/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, direction })
+  });
+
+  const data = await safeJson(response);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Backend respondió ${response.status}.`);
+  return cleanupTranslation(data.translatedText || '');
 }
 
 async function translateWithMyMemory(text, direction) {
@@ -104,10 +100,10 @@ async function translateMyMemoryChunk(text, direction) {
   const langpair = direction === 'pt-es' ? 'pt-BR|es' : 'es|pt-BR';
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor o divide el texto.`);
+  if (!response.ok) throw new Error(`MyMemory respondió ${response.status}. Intenta otro proveedor.`);
   const data = await response.json();
   const translated = data?.responseData?.translatedText;
-  if (!translated) throw new Error('MyMemory no devolvió traducción para una parte del texto.');
+  if (!translated) throw new Error('MyMemory no devolvió traducción.');
   return cleanupTranslation(translated);
 }
 
@@ -123,42 +119,6 @@ async function translateWithLibreTranslate(text, direction, endpoint) {
   return data.translatedText || data.translation || text;
 }
 
-async function translateWithNvidiaDeepSeek(text, direction, apiKey, model, endpoint) {
-  if (!apiKey) throw new Error('Falta la NVIDIA API Key. Agrega la clave en Opciones.');
-
-  const targetLanguage = direction === 'pt-es' ? 'español colombiano claro y natural' : 'portugués brasileño claro y natural';
-  const sourceLanguage = direction === 'pt-es' ? 'portugués brasileño' : 'español';
-  const prompt = `Traduce el siguiente texto de ${sourceLanguage} a ${targetLanguage}. Devuelve únicamente la traducción, sin explicaciones, sin comillas y sin notas.\n\nTexto:\n${text}`;
-  const nvidiaUrl = endpoint || DEFAULTS.nvidiaEndpoint;
-  const nvidiaModel = model || DEFAULTS.nvidiaModel;
-
-  const response = await fetch(nvidiaUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: nvidiaModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      top_p: 0.7,
-      max_tokens: 800,
-      stream: false
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    if (response.status === 404) {
-      throw new Error(`NVIDIA respondió 404. La URL o el modelo no existen para tu cuenta. Revisa en NVIDIA el botón View Code y copia exactamente el model id y el endpoint. Modelo actual: ${nvidiaModel}. Endpoint actual: ${nvidiaUrl}.`);
-    }
-    throw new Error(`NVIDIA respondió ${response.status}. ${errorText.slice(0, 180)}`);
-  }
-
-  const data = await response.json();
-  const translated = data?.choices?.[0]?.message?.content;
-  if (!translated) throw new Error('NVIDIA no devolvió traducción.');
-  return cleanupTranslation(translated);
-}
-
 function translateOfflineBasic(text, direction) {
   const dictionary = direction === 'pt-es' ? PT_ES : ES_PT;
   let output = text;
@@ -167,7 +127,7 @@ function translateOfflineBasic(text, direction) {
     const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     output = output.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), preserveCase(to));
   }
-  if (output === text) return `[Modo básico offline] ${text}\n\nActiva MyMemory gratis, LibreTranslate local o NVIDIA DeepSeek en Opciones para traducción completa.`;
+  if (output === text) return `[Modo básico offline] ${text}\n\nActiva Backend seguro, MyMemory o LibreTranslate local en Opciones para traducción completa.`;
   return output;
 }
 
@@ -211,24 +171,15 @@ function splitLongPiece(text, maxChars) {
   return chunks;
 }
 
+async function safeJson(response) {
+  try { return await response.json(); } catch { return null; }
+}
+
+function normalizeBackendUrl(value) {
+  return String(value || DEFAULTS.backendUrl || '').trim().replace(/\/$/, '');
+}
+
 function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-
-function base64ToBlob(base64, mimeType) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new Blob([bytes], { type: mimeType });
-}
-
-function normalizeAudioFileName(fileName, mimeType) {
-  const lowerName = fileName.toLowerCase();
-  if (lowerName.endsWith('.opus')) return fileName.replace(/\.opus$/i, '.ogg');
-  if (lowerName.includes('.')) return fileName;
-  if (mimeType?.includes('ogg')) return `${fileName}.ogg`;
-  if (mimeType?.includes('webm')) return `${fileName}.webm`;
-  if (mimeType?.includes('mpeg')) return `${fileName}.mp3`;
-  return `${fileName}.webm`;
-}
 
 function cleanupTranslation(value) {
   return String(value).replace(/^```[a-z]*\s*/i, '').replace(/```$/i, '').replace(/^['"“”]+|['"“”]+$/g, '').trim();
