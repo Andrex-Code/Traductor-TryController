@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Traductor iKono PT-BR",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Extensión para traducir mensajes de iKono Chat entre portugués brasileño y español con menú contextual, ventana flotante y transcripción de audio.",
   "permissions": ["contextMenus", "storage", "activeTab", "scripting"],
   "host_permissions": [
@@ -20,6 +20,12 @@
       "js": ["src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*.png", "icons/*.jpg", "icons/*.jpeg", "icons/*.webp"],
+      "matches": ["<all_urls>"]
     }
   ],
   "options_page": "src/options.html",
